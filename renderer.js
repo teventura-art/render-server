@@ -15,6 +15,12 @@ function ffmpeg(args) {
   return execAsync(cmd, { maxBuffer: 100 * 1024 * 1024, timeout: 300000 });
 }
 
+// Pre-scale image to 1920x1080 so FFmpeg doesn't have to decode a huge image on every frame
+async function resizeImage(inputFile, outputFile) {
+  await ffmpeg(`-i "${inputFile}" -vf "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080" -q:v 2 "${outputFile}"`);
+  return outputFile;
+}
+
 // Build a drawtext filter using a temp file for the text (avoids encoding issues)
 function dt(textFile, fontSize, color, x, y, extra = '') {
   return `drawtext=fontfile=${FONT}:textfile='${textFile}':fontsize=${fontSize}:fontcolor=${color}:x=${x}:y=${y}${extra ? ':' + extra : ''}`;
@@ -29,7 +35,7 @@ async function createSegment({ imageFile, bgColor, audioFile, duration, filters,
 
   if (imageFile) {
     inputArgs = `-loop 1 -t ${totalDuration} -i "${imageFile}"`;
-    videoInput = '[0:v]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1[scaled];[scaled]drawbox=x=0:y=0:w=iw:h=ih:color=black@0.55:t=fill[bg];';
+    videoInput = '[0:v]setsar=1[scaled];[scaled]drawbox=x=0:y=0:w=iw:h=ih:color=black@0.55:t=fill[bg];';
   } else {
     inputArgs = `-f lavfi -t ${totalDuration} -i "color=c=${bgColor || '0x0d1117'}:size=1920x1080:rate=25"`;
     videoInput = '[0:v]setsar=1[bg];';
@@ -48,7 +54,7 @@ async function createSegment({ imageFile, bgColor, audioFile, duration, filters,
     `${inputArgs} ${audioArg} ` +
     `-filter_complex "${filterChain}" ` +
     `-map "[vout]" -map ${audioInputIdx}:a ` +
-    `-c:v libx264 -preset fast -crf 23 -c:a aac -ar 44100 -ac 2 ` +
+    `-c:v libx264 -preset ultrafast -crf 23 -c:a aac -ar 44100 -ac 2 ` +
     `-pix_fmt yuv420p -shortest ` +
     `-t ${totalDuration} ` +
     `"${outputFile}"`
@@ -69,7 +75,7 @@ async function concatenate(segmentFiles, outputFile) {
   await fs.promises.writeFile(listFile, listContent, 'utf8');
   await ffmpeg(
     `-f concat -safe 0 -i "${listFile}" ` +
-    `-c:v libx264 -preset fast -crf 23 -c:a aac -ar 44100 -ac 2 ` +
+    `-c:v libx264 -preset ultrafast -crf 23 -c:a aac -ar 44100 -ac 2 ` +
     `-pix_fmt yuv420p "${outputFile}"`
   );
   fs.unlink(listFile, () => {});
@@ -96,7 +102,7 @@ async function buildIntroSegment({ audioFile, catTitle, tempDir, idx }) {
     `-f lavfi -t ${dur} -i "color=c=0x0a0a1a:size=1920x1080:rate=25" -i "${audioFile}" ` +
     `-filter_complex "${filterChain}" ` +
     `-map "[vout]" -map 1:a ` +
-    `-c:v libx264 -preset fast -crf 23 -c:a aac -ar 44100 -ac 2 ` +
+    `-c:v libx264 -preset ultrafast -crf 23 -c:a aac -ar 44100 -ac 2 ` +
     `-pix_fmt yuv420p -shortest -t ${dur} "${outputFile}"`
   );
   return outputFile;
@@ -235,7 +241,7 @@ async function buildCTASegment({ audioFile, tempDir, idx }) {
     `-f lavfi -t ${dur} -i "color=c=0x0a0a1a:size=1920x1080:rate=25" -i "${audioFile}" ` +
     `-filter_complex "[0:v]setsar=1[bg];[bg]drawbox=x=0:y=0:w=iw:h=ih:color=0x1a0a0a:t=fill[c1];[c1]drawbox=x=160:y=530:w=1600:h=8:color=0xf5a623:t=fill[line];[line]${dt(line1File, 72, 'white', '(w-text_w)/2', 350)}[t1];[t1]${dt(line2File, 46, '0xf5a623', '(w-text_w)/2', 590)}[vout]" ` +
     `-map "[vout]" -map 1:a ` +
-    `-c:v libx264 -preset fast -crf 23 -c:a aac -ar 44100 -ac 2 ` +
+    `-c:v libx264 -preset ultrafast -crf 23 -c:a aac -ar 44100 -ac 2 ` +
     `-pix_fmt yuv420p -shortest -t ${dur} "${outputFile}"`
   );
   return outputFile;
@@ -253,7 +259,7 @@ async function buildOutroSegment({ audioFile, catTitle, tempDir, idx }) {
     `-f lavfi -t ${dur} -i "color=c=0x0a0a1a:size=1920x1080:rate=25" -i "${audioFile}" ` +
     `-filter_complex "[0:v]setsar=1[bg];[bg]drawbox=x=0:y=0:w=iw:h=ih:color=0x0a0a1a:t=fill[c1];[c1]drawbox=x=160:y=530:w=1600:h=8:color=0xf5a623:t=fill[line];[line]${dt(line1File, 68, 'white', '(w-text_w)/2', 350)}[t1];[t1]${dt(line2File, 46, '0xf5a623', '(w-text_w)/2', 600)}[vout]" ` +
     `-map "[vout]" -map 1:a ` +
-    `-c:v libx264 -preset fast -crf 23 -c:a aac -ar 44100 -ac 2 ` +
+    `-c:v libx264 -preset ultrafast -crf 23 -c:a aac -ar 44100 -ac 2 ` +
     `-pix_fmt yuv420p -shortest -t ${dur} "${outputFile}"`
   );
   return outputFile;
@@ -297,6 +303,13 @@ async function renderQMC({ catTitle, questions, urlAudioIntro, urlAudioCTA, urlA
           download(q.URL_Audio_Pregunta, qAudioFile),
           download(q.URL_Audio_Respuesta, aAudioFile)
         ]);
+        // Pre-scale image to 1920x1080 so FFmpeg doesn't work with a giant source image
+        let finalImgFile = null;
+        if (fs.existsSync(imgFile)) {
+          const scaledFile = path.join(tempDir, `img_scaled_${idx}.jpg`);
+          await resizeImage(imgFile, scaledFile).catch(() => null);
+          finalImgFile = fs.existsSync(scaledFile) ? scaledFile : imgFile;
+        }
         return {
           text: q.Pregunta,
           context: q.Contexto || '',
@@ -308,7 +321,7 @@ async function renderQMC({ catTitle, questions, urlAudioIntro, urlAudioCTA, urlA
           ],
           audioQuestion: qAudioFile,
           audioAnswer: aAudioFile,
-          imageFile: fs.existsSync(imgFile) ? imgFile : null
+          imageFile: finalImgFile
         };
       }));
       qAssets.push(...results);
@@ -388,6 +401,13 @@ async function renderQuiz({ temaTitle, canal, questions, urlAudioIntro, urlAudio
           download(q.URL_Audio_Pregunta, qAudioFile),
           download(q.URL_Audio_Respuesta, aAudioFile)
         ]);
+        // Pre-scale image to 1920x1080 so FFmpeg doesn't work with a giant source image
+        let finalImgFile = null;
+        if (fs.existsSync(imgFile)) {
+          const scaledFile = path.join(tempDir, `img_scaled_${idx}.jpg`);
+          await resizeImage(imgFile, scaledFile).catch(() => null);
+          finalImgFile = fs.existsSync(scaledFile) ? scaledFile : imgFile;
+        }
         return {
           text: q.Pregunta,
           context: q.Contexto || '',
@@ -399,7 +419,7 @@ async function renderQuiz({ temaTitle, canal, questions, urlAudioIntro, urlAudio
           ],
           audioQuestion: qAudioFile,
           audioAnswer: aAudioFile,
-          imageFile: fs.existsSync(imgFile) ? imgFile : null
+          imageFile: finalImgFile
         };
       }));
       qAssets.push(...results);
