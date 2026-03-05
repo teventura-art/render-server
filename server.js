@@ -28,8 +28,11 @@ app.post('/render/qmc', async (req, res) => {
     const result = await renderQMC({ catTitle, questions, urlAudioIntro, urlAudioCTA, urlAudioOutro }, VIDEOS_DIR, BASE_URL);
     res.json(result);
   } catch (err) {
-    console.error('[QMC] Error:', err.message);
-    res.status(500).json({ error: err.message });
+    const msg = err.message || String(err);
+    const stderr = err.stderr ? err.stderr.slice(-2000) : '';
+    console.error('[QMC] Error:', msg);
+    if (stderr) console.error('[QMC] stderr:', stderr);
+    res.status(500).json({ error: msg, stderr: stderr.slice(-500) });
   }
 });
 
@@ -43,8 +46,11 @@ app.post('/render/quiz', async (req, res) => {
     const result = await renderQuiz({ temaTitle, canal, questions, urlAudioIntro, urlAudioCTA, urlAudioOutro, urlMusica }, VIDEOS_DIR, BASE_URL);
     res.json(result);
   } catch (err) {
-    console.error('[QUIZ] Error:', err.message);
-    res.status(500).json({ error: err.message });
+    const msg = err.message || String(err);
+    const stderr = err.stderr ? err.stderr.slice(-2000) : '';
+    console.error('[QUIZ] Error:', msg);
+    if (stderr) console.error('[QUIZ] stderr:', stderr);
+    res.status(500).json({ error: msg, stderr: stderr.slice(-500) });
   }
 });
 
