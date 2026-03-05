@@ -5,16 +5,16 @@ const { exec } = require('child_process');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
 
-async function download(url, dest, redirectCount = 0) {
+async function downloadOnce(url, dest, redirectCount = 0) {
   if (redirectCount > 5) throw new Error('Too many redirects for: ' + url);
   return new Promise((resolve, reject) => {
     const protocol = url.startsWith('https') ? https : http;
     const file = fs.createWriteStream(dest);
-    const req = protocol.get(url, { timeout: 30000 }, (res) => {
+    const req = protocol.get(url, { timeout: 60000 }, (res) => {
       if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307) {
         file.close();
         fs.unlink(dest, () => {});
-        return download(res.headers.location, dest, redirectCount + 1).then(resolve).catch(reject);
+        return downloadOnce(res.headers.location, dest, redirectCount + 1).then(resolve).catch(reject);
       }
       if (res.statusCode !== 200) {
         file.close();
@@ -28,6 +28,20 @@ async function download(url, dest, redirectCount = 0) {
     req.on('error', (err) => { fs.unlink(dest, () => {}); reject(err); });
     req.on('timeout', () => { req.destroy(); reject(new Error('Download timeout: ' + url)); });
   });
+}
+
+async function download(url, dest, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      await downloadOnce(url, dest);
+      return;
+    } catch (err) {
+      const msg = err instanceof AggregateError ? err.errors.map(e => e.message).join(', ') : err.message;
+      console.warn(`[download] Attempt ${i + 1}/${retries} failed for ${url}: ${msg}`);
+      if (i < retries - 1) await new Promise(r => setTimeout(r, 3000 * (i + 1)));
+      else throw new Error(`Download failed after ${retries} attempts: ${msg}`);
+    }
+  }
 }
 
 async function getAudioDuration(filePath) {

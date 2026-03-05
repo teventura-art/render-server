@@ -47,7 +47,9 @@ app.post('/render/qmc', (req, res) => {
       console.log(`[QMC] Job ${jobId} done: ${result.url}`);
     })
     .catch(err => {
-      const msg = err.message || String(err);
+      const msg = err instanceof AggregateError
+        ? `AggregateError: ${err.errors.map(e => e.message).join(' | ')}`
+        : (err.message || String(err) || 'Unknown error');
       jobs.set(jobId, { status: 'error', error: msg });
       console.error(`[QMC] Job ${jobId} failed:`, msg);
     });
@@ -72,7 +74,9 @@ app.post('/render/quiz', (req, res) => {
       console.log(`[QUIZ] Job ${jobId} done: ${result.url}`);
     })
     .catch(err => {
-      const msg = err.message || String(err);
+      const msg = err instanceof AggregateError
+        ? `AggregateError: ${err.errors.map(e => e.message).join(' | ')}`
+        : (err.message || String(err) || 'Unknown error');
       jobs.set(jobId, { status: 'error', error: msg });
       console.error(`[QUIZ] Job ${jobId} failed:`, msg);
     });
